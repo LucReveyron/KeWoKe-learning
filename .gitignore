@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+/src/archive/
+/data/
+/custom-mfcc/
+/src/saved_images/
+src/saved_models/
+src/training_history/
+src/tuner_results/
+src/my_saved_dataset/
+# Virtual environments
+.venv
+.DS_Store
+.last_update_check
+# Models
+/src/classifier_model.cc 
+/src/model.cc 
+/src/model.tflite
+
