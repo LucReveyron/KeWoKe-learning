@@ -1,78 +1,77 @@
+# train.py
+
 import os
 import json
 import datetime
 import tensorflow as tf
 from tensorflow.keras import callbacks
-
 import models
 from utils import read_config, Config, save_training_plots, save_confusion_matrix
 from dataset import prepare_and_split_data, download_and_extract_dataset
 
-config = Config()
-config = read_config()
+def train_model(config_file='run_config.toml'):
+    # Load configuration
+    config = Config()
+    config = read_config(config_file)
 
-download_and_extract_dataset(config.dataset_url, config.download_dir, config.extract_dir)
+    # Prepare dataset
+    download_and_extract_dataset(config.dataset_url, config.download_dir, config.extract_dir)
+    train_ds, val_ds, test_ds, all_labels = prepare_and_split_data(config)
 
-train_ds, val_ds, test_ds, all_labels = prepare_and_split_data(config)
+    # Prepare model
+    num_classes = len(all_labels)
+    model = models.kws_cnn_microspeech()
+    optimizer = tf.keras.optimizers.Adam(learning_rate=3e-3, clipnorm=1.0)
+    model.compile(optimizer=optimizer,
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
 
-# Prepare model
-num_classes = len(all_labels)
+    # Callbacks
+    lr_scheduler = callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.5, patience=3, verbose=1, min_lr=1e-6
+    )
+    early_stop = callbacks.EarlyStopping(
+        monitor='val_loss', patience=7, restore_best_weights=True, verbose=1
+    )
 
+    # Training
+    history = model.fit(
+        train_ds,
+        epochs=config.epoch,
+        validation_data=val_ds,
+        callbacks=[lr_scheduler, early_stop],
+        verbose=1
+    )
 
-model = models.kws_cnn_microspeech()
+    # Evaluate
+    test_loss, test_acc = model.evaluate(test_ds)
+    print(f"Test accuracy: {test_acc:.3f}")
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=3e-3, clipnorm=1.0) # Other model work with 1e-4 (1e-4 for featuremodel)
-model.compile(optimizer=optimizer,
-                loss='sparse_categorical_crossentropy',
-                metrics=['accuracy'])
+    # Save model and history
+    run_name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    model_dir = "saved_models"
+    history_json_path = f"training_history/history_{run_name}.json"
+    os.makedirs(model_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(history_json_path), exist_ok=True)
 
-lr_scheduler = callbacks.ReduceLROnPlateau(
-    monitor='val_loss',
-    factor=0.5,
-    patience=3,
-    verbose=1,
-    min_lr=1e-6
-)
+    model_path = f"{model_dir}/model_{run_name}.keras"
+    model.save(model_path)
 
-early_stop = callbacks.EarlyStopping(
-    monitor='val_loss',
-    patience=7,
-    restore_best_weights=True,
-    verbose=1
-)
+    with open(history_json_path, "w") as f:
+        json.dump(history.history, f)
 
-history = model.fit(
-    train_ds,
-    epochs=config.epoch,
-    validation_data=val_ds,
-    callbacks=[lr_scheduler, early_stop],
-    verbose=1   
-)   
+    output_prefix = f"saved_images/metrics_{run_name}"
 
-test_loss, test_acc = model.evaluate(test_ds)
-print(f"Test accuracy: {test_acc:.3f}")
+    try:
+        save_training_plots(history.history, output_prefix)
+    except Exception as e:
+        print(f"Warning: Failed to save training plots: {e}")
 
-# Save model and training steps
-run_name = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-model_dir = f"saved_models"
-history_json_path = f"training_history/history_{run_name}.json"
+    try:
+        save_confusion_matrix(model, test_ds, output_prefix, class_names=all_labels)
+    except Exception as e:
+        print(f"Warning: Failed to save confusion matrix: {e}")
 
-os.makedirs(model_dir, exist_ok=True)
-os.makedirs(os.path.dirname(history_json_path), exist_ok=True)
+    return model_path  # So main.py knows where the model was saved
 
-model.save(f"{model_dir + f'/model_{run_name}'}.keras")
-
-with open(history_json_path, "w") as f:
-    json.dump(history.history, f)
-
-output_prefix = f"saved_images/metrics_{run_name}"
-
-try:
-    save_training_plots(history.history, output_prefix)
-except Exception as e:
-    print(f"Warning: Failed to save training plots: {e}")
-
-try:
-    save_confusion_matrix(model, test_ds, output_prefix, class_names=all_labels)
-except Exception as e:
-    print(f"Warning: Failed to save confusion matrix: {e}")
+train_model(config_file='run_config.toml')

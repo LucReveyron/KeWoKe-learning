@@ -18,10 +18,10 @@ class Config:
     val_ratio: float = 0.0
     test_ratio: float = 0.0
 
-def read_config():
+def read_config(config_file):
     config = Config()
 
-    with open('run_config.toml', 'r') as f:
+    with open(config_file, 'r') as f:
         file = toml.load(f)
     
     # Copy configuration param from TOML
